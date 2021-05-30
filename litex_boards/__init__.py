@@ -11,6 +11,7 @@ vendors = [
     "colorlight",
     "digilent",
     "enclustra",
+    "gadgetfactory",
     "gsd",
     "hackaday",
     "kosagi",
