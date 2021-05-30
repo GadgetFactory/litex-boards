@@ -43,6 +43,7 @@ class TestTargets(unittest.TestCase):
         platforms.append("ac701")
         platforms.append("aller")
         platforms.append("arty")
+        platforms.append("basys3")
         platforms.append("mimas_a7")
         platforms.append("netv2")
         platforms.append("nexys4ddr")
@@ -51,6 +52,7 @@ class TestTargets(unittest.TestCase):
         platforms.append("acorn")
         platforms.append("marblemini")
         platforms.append("qmtech_wukong")
+        platforms.append("qmtech_xc7a35t")
 
         # Xilinx Kintex7
         platforms.append("genesys2")
@@ -90,6 +92,7 @@ class TestTargets(unittest.TestCase):
 
         # Intel Cyclone10
         platforms.append("c10lprefkit")
+        platforms.append("cyc1000")
 
         # Intel Max10
         platforms.append("de10lite")
@@ -101,6 +104,7 @@ class TestTargets(unittest.TestCase):
         platforms.append("fomu_pvt")
         platforms.append("tinyfpga_bx")
         platforms.append("icebreaker")
+        platforms.append("icesugar")
 
         # Lattice MachXO2
         platforms.append("machxo3")

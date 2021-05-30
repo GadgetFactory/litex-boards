@@ -3,19 +3,10 @@
 #
 # This file is part of LiteX-Boards.
 #
-# Copyright (c) 2019 Sean Cross <sean@xobs.io>
-# Copyright (c) 2018 David Shah <dave@ds0.me>
-# Copyright (c) 2020 Piotr Esden-Tempski <piotr@esden.net>
-# Copyright (c) 2020 Florent Kermarrec <florent@enjoy-digital.fr>
+# Copyright (c) 2021 Hans Baier <hansfbaier@gmail.com>
 # SPDX-License-Identifier: BSD-2-Clause
 
-# The iCEBreaker is the first open source iCE40 FPGA development board designed for teachers and
-# students: https://www.crowdsupply.com/1bitsquared/icebreaker-fpga
-
-# This target file provides a minimal LiteX SoC for the iCEBreaker with a CPU, its ROM (in SPI Flash),
-# its SRAM, close to the others LiteX targets. A more complete example of LiteX SoC for the iCEBreaker
-# with more features, examples to run C/Rust code on the RISC-V CPU and documentation can be found
-# at: https://github.com/icebreaker-fpga/icebreaker-litex-examples
+# iCESugar FPGA: https://www.aliexpress.com/item/4001201771358.html
 
 import os
 import argparse
@@ -23,15 +14,13 @@ import argparse
 from migen import *
 from migen.genlib.resetsync import AsyncResetSynchronizer
 
-from litex_boards.platforms import icebreaker
+from litex_boards.platforms import muselab_icesugar
 
 from litex.soc.cores.ram import Up5kSPRAM
-from litex.soc.cores.spi_flash import SpiFlash
 from litex.soc.cores.clock import iCE40PLL
 from litex.soc.integration.soc_core import *
 from litex.soc.integration.soc import SoCRegion
 from litex.soc.integration.builder import *
-from litex.soc.cores.video import VideoDVIPHY
 from litex.soc.cores.led import LedChaser
 
 kB = 1024
@@ -49,7 +38,6 @@ class _CRG(Module):
 
         # Clk/Rst
         clk12 = platform.request("clk12")
-        rst_n = platform.request("user_btn_n")
 
         # Power On Reset
         por_count = Signal(16, reset=2**16-1)
@@ -60,7 +48,7 @@ class _CRG(Module):
 
         # PLL
         self.submodules.pll = pll = iCE40PLL(primitive="SB_PLL40_PAD")
-        self.comb += pll.reset.eq(~rst_n) # FIXME: Add proper iCE40PLL reset support and add back | self.rst.
+        self.comb += pll.reset.eq(self.rst)
         pll.register_clkin(clk12, 12e6)
         pll.create_clkout(self.cd_sys, sys_clk_freq, with_reset=False)
         self.specials += AsyncResetSynchronizer(self.cd_sys, ~por_done | ~pll.locked)
@@ -71,19 +59,19 @@ class _CRG(Module):
 class BaseSoC(SoCCore):
     mem_map = {**SoCCore.mem_map, **{"spiflash": 0x80000000}}
     def __init__(self, bios_flash_offset, sys_clk_freq=int(24e6), with_video_terminal=False, **kwargs):
-        platform = icebreaker.Platform()
-        platform.add_extension(icebreaker.break_off_pmod)
+        platform = muselab_icesugar.Platform()
 
         # Disable Integrated ROM/SRAM since too large for iCE40 and UP5K has specific SPRAM.
         kwargs["integrated_sram_size"] = 0
         kwargs["integrated_rom_size"]  = 0
 
         # Set CPU variant / reset address
+        kwargs["cpu_variant"]  = "lite"
         kwargs["cpu_reset_address"] = self.mem_map["spiflash"] + bios_flash_offset
 
         # SoCCore ----------------------------------------------------------------------------------
         SoCCore.__init__(self, platform, sys_clk_freq,
-            ident          = "LiteX SoC on iCEBreaker",
+            ident          = "LiteX SoC on Muselab iCESugar",
             ident_version  = True,
             **kwargs)
 
@@ -104,24 +92,19 @@ class BaseSoC(SoCCore):
             linker = True)
         )
 
-        # Video ------------------------------------------------------------------------------------
-        if with_video_terminal:
-            platform.add_extension(icebreaker.dvi_pmod)
-            self.submodules.videophy = VideoDVIPHY(platform.request("dvi"), clock_domain="sys")
-            self.add_video_terminal(phy=self.videophy, timings="640x480@75Hz", clock_domain="sys")
-
         # Leds -------------------------------------------------------------------------------------
+        led_pads = platform.request_all("user_led_n")
         self.submodules.leds = LedChaser(
-            pads         = platform.request_all("user_led"),
+            pads         = led_pads,
             sys_clk_freq = sys_clk_freq)
 
 # Flash --------------------------------------------------------------------------------------------
 
-def flash(build_dir, build_name, bios_flash_offset):
-    from litex.build.lattice.programmer import IceStormProgrammer
-    prog = IceStormProgrammer()
-    prog.flash(bios_flash_offset, f"{build_dir}/software/bios/bios.bin")
-    prog.flash(0x00000000,        f"{build_dir}/gateware/{build_name}.bin")
+def flash(bios_flash_offset):
+    from litex.build.lattice.programmer import IceSugarProgrammer
+    prog = IceSugarProgrammer()
+    prog.flash(bios_flash_offset, "build/muselab_icesugar/software/bios/bios.bin")
+    prog.flash(0x00000000,        "build/muselab_icesugar/gateware/muselab_icesugar.bin")
 
 # Build --------------------------------------------------------------------------------------------
 
@@ -132,7 +115,6 @@ def main():
     parser.add_argument("--flash",               action="store_true", help="Flash Bitstream")
     parser.add_argument("--sys-clk-freq",        default=24e6,        help="System clock frequency (default: 24MHz)")
     parser.add_argument("--bios-flash-offset",   default=0x40000,     help="BIOS offset in SPI Flash (default: 0x40000)")
-    parser.add_argument("--with-video-terminal", action="store_true", help="Enable Video Terminal (with DVI PMOD)")
     builder_args(parser)
     soc_core_args(parser)
     args = parser.parse_args()
@@ -140,7 +122,6 @@ def main():
     soc = BaseSoC(
         bios_flash_offset   = args.bios_flash_offset,
         sys_clk_freq        = int(float(args.sys_clk_freq)),
-        with_video_terminal = args.with_video_terminal,
         **soc_core_argdict(args)
     )
     builder = Builder(soc, **builder_argdict(args))
@@ -151,7 +132,7 @@ def main():
         prog.load_bitstream(os.path.join(builder.gateware_dir, soc.build_name + ".bin"))
 
     if args.flash:
-        flash(builder.output_dir, soc.build_name, args.bios_flash_offset)
+        flash(args.bios_flash_offset)
 
 if __name__ == "__main__":
     main()
